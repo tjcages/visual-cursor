@@ -1,5 +1,8 @@
 # visual-cursor
 
+[![CI](https://github.com/tjcages/visual-cursor/actions/workflows/ci.yml/badge.svg)](https://github.com/tjcages/visual-cursor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Hold **⌘** and hover any React component in your running app to highlight it. **⌘-click** it to open a small composer — type a change in plain English, and a local [Cursor](https://cursor.com) agent edits the source file on disk. Vite's HMR reflects the change live, right where you clicked. **⌘Z** / **⌘⇧Z** undo/redo the agent's edits. Open as many composer panels as you like; each keeps its own threaded conversation so you can keep refining ("make it blue" → "actually, more compact").
 
 This is a dev-only tool — it does nothing in a production build.
@@ -104,6 +107,15 @@ Returns both Vite plugins (`cursorAgent()` + `clickToSourceStamp()`) as an array
 
 [`examples/vite-react`](./examples/vite-react) is a minimal working app wired up end to end —
 clone the repo, `npm run build`, then `cd examples/vite-react && npm install && INSPECT=1 npm run dev`.
+
+## Requirements
+
+| | |
+| --- | --- |
+| Node | ≥18 (the optional agent feature needs ≥22.13 — see [Install](#install)) |
+| React | ≥18 |
+| Vite | ≥5 |
+| `@cursor/sdk` | optional — only for `cursorAgent()`; the stamping + inspector overlay work without it |
 
 ## Notes
 

@@ -9,6 +9,11 @@
     "type": "git",
     "url": "git+ssh://git@github.com/tjcages/visual-cursor.git"
   },
+  "bugs": {
+    "url": "https://github.com/tjcages/visual-cursor/issues"
+  },
+  "homepage": "https://github.com/tjcages/visual-cursor#readme",
+  "sideEffects": false,
   "keywords": [
     "vite",
     "vite-plugin",
@@ -72,5 +77,6 @@
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "packageManager": "npm@11.8.0"
 }
