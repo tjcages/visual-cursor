@@ -33,17 +33,30 @@ jobs:
 
       - run: npm test
 
+      - name: Check for NPM_TOKEN
+        id: token-check
+        run: echo "present=${{ secrets.NPM_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
       # On every push to main: if there are unreleased changesets, open/update
       # a "Version Packages" PR that bumps the version + writes the changelog.
       # Merging that PR triggers this workflow again, and this time — with no
       # pending changesets — `publish` runs instead, publishing to npm and
-      # tagging the release. Requires an NPM_TOKEN repo secret (an npm
-      # automation token with publish access) — nothing publishes until
-      # that's set.
+      # tagging the release. Skipped entirely until an NPM_TOKEN repo secret
+      # (an npm automation token with publish access) exists — otherwise this
+      # job fails loudly on every push to main for no actionable reason.
       - name: Create release PR or publish
+        if: steps.token-check.outputs.present == 'true'
         uses: changesets/action@v1
         with:
           publish: npm run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skipped — no NPM_TOKEN yet
+        if: steps.token-check.outputs.present != 'true'
+        run: |
+          echo "::notice::NPM_TOKEN repo secret isn't set — skipping the release step. \
+          Checks (lint/typecheck/test) above still ran and passed. Add an npm automation \
+          token as the NPM_TOKEN secret (Settings → Secrets and variables → Actions) to \
+          turn this on, or publish the first release by hand: npm run build && npm publish --access public"
