@@ -45,6 +45,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run build && changeset publish",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
@@ -60,6 +63,7 @@
   },
   "devDependencies": {
     "@babel/types": "^7.24.0",
+    "@changesets/cli": "^2.31.0",
     "@eslint/js": "^9.39.4",
     "@types/babel__core": "^7.20.5",
     "@types/node": "^20.0.0",

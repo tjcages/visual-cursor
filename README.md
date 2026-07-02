@@ -122,3 +122,24 @@ clone the repo, `npm run build`, then `cd examples/vite-react && npm install && 
 - **Never committed / logged**: the API key is only read server-side, in the dev-server process.
 - Undo/redo is per dev-server session (in-memory), not persisted across restarts.
 - The agent is constrained to edit only the one file it was scoped to.
+
+## Releasing
+
+Versioning goes through [Changesets](https://github.com/changesets/changesets):
+
+1. On a change that should ship, run `npm run changeset` and describe it (patch/minor/major).
+   Commit the generated `.changeset/*.md` file alongside your change.
+2. Pushing to `main` with pending changesets makes `.github/workflows/release.yml` open (or
+   update) a **"Version Packages"** PR that bumps `package.json` and writes `CHANGELOG.md`.
+3. Merging that PR triggers the workflow again — this time, with no pending changesets, it runs
+   `npm run release` (build + `changeset publish`) and publishes to npm.
+
+This requires an **`NPM_TOKEN`** repo secret (Settings → Secrets and variables → Actions) —
+an [npm automation token](https://docs.npmjs.com/creating-and-viewing-access-tokens) with
+publish access. Nothing publishes until that's set; CI (lint/typecheck/test) still runs either
+way. The very first publish can also be done by hand from a clean checkout:
+
+```bash
+npm run build
+npm publish --access public
+```
