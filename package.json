@@ -1,0 +1,67 @@
+{
+  "name": "visual-cursor",
+  "version": "0.1.0",
+  "description": "⌘-click any React component in the browser, describe a change in plain English, and a local Cursor agent edits the source file live via HMR.",
+  "type": "module",
+  "license": "MIT",
+  "author": "tjcages",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/tjcages/visual-cursor.git"
+  },
+  "keywords": [
+    "vite",
+    "vite-plugin",
+    "react",
+    "cursor",
+    "agent",
+    "devtools",
+    "hmr",
+    "click-to-source"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "vite": ">=5"
+  },
+  "dependencies": {
+    "@babel/core": "^7.24.0"
+  },
+  "optionalDependencies": {
+    "@cursor/sdk": "^1.0.22",
+    "typescript": ">=5"
+  },
+  "devDependencies": {
+    "@babel/types": "^7.24.0",
+    "@types/babel__core": "^7.20.5",
+    "@types/node": "^20.0.0",
+    "@types/react": ">=18",
+    "react": ">=18",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
