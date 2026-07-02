@@ -4,6 +4,17 @@ Hold **⌘** and hover any React component in your running app to highlight it. 
 
 This is a dev-only tool — it does nothing in a production build.
 
+> **⚠️ Security: localhost only.** The `/__agent`, `/__undo`, `/__redo` endpoints are
+> **unauthenticated** — a POST to `/__agent` turns into an arbitrary edit to a file on disk.
+> That's the point (it's how the browser talks to the agent), but it means anyone who can
+> reach your dev server can edit your repo. By default `cursorAgent()` refuses any request
+> that didn't arrive over loopback (`127.0.0.1`/`::1`), so this is safe with plain `vite dev`.
+> **It stops being safe** the moment your dev server is reachable from anywhere else —
+> `vite --host`, a container with a published port, an ngrok/Cloudflare tunnel, a shared
+> devcontainer. Don't do that with this plugin enabled unless the network path is itself
+> authenticated and you trust everyone on it (`allowRemote: true` opts out of the guard —
+> see [`AgentOptions`](#agentoptions) below).
+
 ## How it works
 
 - A Vite plugin (`clickToSourceStamp`) stamps every element you author with a `data-loc="file:line:col"` attribute at dev-transform time, plus `Component.__loc` on every top-level component so clicks resolve even through portals (Radix `asChild`, dropdowns rendered to `<body>`, etc).
@@ -77,6 +88,7 @@ Returns both Vite plugins (`cursorAgent()` + `clickToSourceStamp()`) as an array
 | `devVarsFile` | `".dev.vars"`        | A dotenv-style file also checked for the key (set `null` to disable).        |
 | `model`       | `"composer-2.5"`     | Cursor Agent model id.                                                       |
 | `maxThreads`  | `24`                 | Max concurrently-held agent threads before the oldest is disposed.           |
+| `allowRemote` | `false`              | Accept `/__agent`/`/__undo`/`/__redo` requests from outside localhost. **See the security warning above before enabling this.** |
 
 ### `<VisualCursor />` (from `visual-cursor/client`)
 

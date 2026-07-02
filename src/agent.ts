@@ -11,7 +11,34 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
+
+// The /__agent, /__undo, /__redo endpoints take unauthenticated instructions
+// and turn them into arbitrary edits to files on disk — that's fine for a
+// dev server bound to localhost, but remote code execution if the dev server
+// is ever reachable from the network (e.g. `vite --host`, a container with a
+// published port, a tunnel). Refuse anything that didn't arrive over the
+// loopback interface unless the caller explicitly opts in.
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+function isLoopback(req: IncomingMessage): boolean {
+  const addr = req.socket.remoteAddress;
+  return !!addr && LOOPBACK.has(addr);
+}
+function rejectNonLoopback(req: IncomingMessage, res: ServerResponse, allowRemote: boolean): boolean {
+  if (allowRemote || isLoopback(req)) return false;
+  res.statusCode = 403;
+  res.setHeader("Content-Type", "application/json");
+  res.end(
+    JSON.stringify({
+      error:
+        "visual-cursor: refused a non-loopback request. This endpoint runs arbitrary file edits — " +
+        "only localhost is trusted by default. Pass { allowRemote: true } to cursorAgent() if you " +
+        "understand the risk (e.g. a trusted LAN/tunnel).",
+    })
+  );
+  return true;
+}
 
 function readEnvFile(root: string, file: string, name: string): string | undefined {
   try {
@@ -71,6 +98,13 @@ export type AgentOptions = {
   model?: string;
   /** Max concurrently held agent threads before the oldest is disposed. @default 24 */
   maxThreads?: number;
+  /**
+   * Allow /__agent, /__undo, /__redo to accept requests from outside
+   * localhost. These endpoints turn a POST body into arbitrary file edits —
+   * only enable this if the dev server is behind a trust boundary you
+   * control (e.g. an authenticated tunnel). @default false
+   */
+  allowRemote?: boolean;
 };
 
 // Live agents keyed by thread id (agentId). Held for the dev server's lifetime;
@@ -184,6 +218,7 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
     devVarsFile = ".dev.vars",
     model = "composer-2.5",
     maxThreads = 24,
+    allowRemote = false,
   } = options;
   const root = process.cwd();
   const threads = new Map<string, ThreadEntry>();
@@ -196,6 +231,7 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
     configureServer(server) {
       server.middlewares.use("/__agent", async (req, res, next) => {
         if (req.method !== "POST") return next();
+        if (rejectNonLoopback(req, res, allowRemote)) return;
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
         await new Promise((r) => req.on("end", r));
@@ -305,7 +341,8 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
 
       // ⌘Z / ⌘⇧Z — restore the working tree to before/after the last agent turn.
       const history = (from: Snap[], to: Snap[], key: "pre" | "post") =>
-        (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+        (req: IncomingMessage, res: ServerResponse) => {
+          if (rejectNonLoopback(req, res, allowRemote)) return;
           res.setHeader("Content-Type", "application/json");
           const snap = from.pop();
           if (!snap) return res.end(JSON.stringify({ ok: false, empty: true }));
