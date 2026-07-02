@@ -100,6 +100,11 @@ Returns both Vite plugins (`cursorAgent()` + `clickToSourceStamp()`) as an array
 
 `ClickToSource` is exported as a deprecated alias of `VisualCursor`.
 
+## Example
+
+[`examples/vite-react`](./examples/vite-react) is a minimal working app wired up end to end —
+clone the repo, `npm run build`, then `cd examples/vite-react && npm install && INSPECT=1 npm run dev`.
+
 ## Notes
 
 - **Never committed / logged**: the API key is only read server-side, in the dev-server process.
