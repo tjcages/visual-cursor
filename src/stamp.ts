@@ -54,6 +54,7 @@ function stampPlugin(relPath: string) {
       visitor: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Program(p: any) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const inserts: Array<{ stmt: any; name: string; line: number }> = [];
           for (const stmt of p.get("body")) {
             const info = componentDecl(stmt.node);
