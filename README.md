@@ -27,7 +27,7 @@ This is a dev-only tool — it does nothing in a production build.
 npm install visual-cursor @cursor/sdk
 ```
 
-`@cursor/sdk` is an optional peer dependency — only required if you use the agent-editing feature (`cursorAgent`); the stamping + inspector overlay works without it.
+`@cursor/sdk` is an optional peer dependency — only required if you use the agent-editing feature (`cursorAgent`); the stamping + inspector overlay works without it. Note: `@cursor/sdk` itself requires **Node ≥22.13** — on an older Node, npm silently skips installing it (so `cursorAgent()` will report a missing package at runtime, and any code that type-imports it will fail to resolve types). Everything else in this package works on Node ≥18.
 
 ## Setup
 

@@ -13,7 +13,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # @cursor/sdk (optional dep) requires Node >=22.13 — npm silently
+          # skips installing it on older Node, which then fails typecheck on
+          # the dynamic `import("@cursor/sdk")` in src/agent.ts.
+          node-version: 22
           cache: npm
 
       - run: npm ci
