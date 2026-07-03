@@ -58,6 +58,55 @@ function readEnvFile(root: string, file: string, name: string): string | undefin
   return undefined;
 }
 
+// Upsert NAME=value into a dotenv-style file: replace an existing NAME= line,
+// else append. Creates the file owner-read/write only. The value is never logged.
+function writeEnvVar(root: string, file: string, name: string, value: string) {
+  const abs = path.join(root, file);
+  let txt: string | null = null;
+  try {
+    txt = fs.readFileSync(abs, "utf8");
+  } catch {
+    /* new file */
+  }
+  const entry = `${name}=${value}`;
+  if (txt === null) {
+    fs.writeFileSync(abs, entry + "\n", { mode: 0o600 });
+    return;
+  }
+  const lines = txt.split("\n");
+  const idx = lines.findIndex((l) => {
+    const eq = l.indexOf("=");
+    return eq !== -1 && l.slice(0, eq).trim() === name;
+  });
+  if (idx === -1) {
+    if (txt !== "" && !txt.endsWith("\n")) txt += "\n";
+    fs.writeFileSync(abs, txt + entry + "\n");
+  } else {
+    lines[idx] = entry;
+    fs.writeFileSync(abs, lines.join("\n"));
+  }
+}
+
+// Keep the secrets file out of git: add an exact-name entry to .gitignore
+// unless one is already there. Returns whether a line was added.
+function ensureGitignored(root: string, file: string): boolean {
+  const gi = path.join(root, ".gitignore");
+  let txt = "";
+  try {
+    txt = fs.readFileSync(gi, "utf8");
+  } catch {
+    /* no .gitignore yet */
+  }
+  const covered = txt.split("\n").some((l) => {
+    const t = l.trim();
+    return t === file || t === `/${file}`;
+  });
+  if (covered) return false;
+  const sep = txt === "" || txt.endsWith("\n") ? "" : "\n";
+  fs.writeFileSync(gi, `${txt}${sep}${file}\n`);
+  return true;
+}
+
 type Body = {
   file?: string;
   line?: number;
@@ -224,11 +273,60 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
   const threads = new Map<string, ThreadEntry>();
   const undoStack: Snap[] = [];
   const redoStack: Snap[] = [];
+  let keyDismissed = false; // first-run key modal: a dismissal sticks for this server's lifetime
 
   return {
     name: "visual-cursor:agent",
     apply: "serve",
     configureServer(server) {
+      // First-run key setup. GET → { set, show, envName, file }: `show` while no
+      // key can be found, so the overlay can offer a paste-your-key modal.
+      // POST { dismissed: true } → the user waved it off; don't offer it again
+      // until the next server start (kept server-side so it survives the full
+      // reloads Vite fires around a restart). POST { key } → upsert into
+      // devVarsFile (and make sure that file is gitignored). Everything stays
+      // on this machine — the key is never echoed back or logged.
+      server.middlewares.use("/__key", async (req, res, next) => {
+        if (req.method !== "GET" && req.method !== "POST") return next();
+        if (rejectNonLoopback(req, res, allowRemote)) return;
+        res.setHeader("Content-Type", "application/json");
+        if (req.method === "GET") {
+          const set = !!(process.env[apiKeyEnv] ?? (devVarsFile ? readEnvFile(root, devVarsFile, apiKeyEnv) : undefined));
+          // No writable file (devVarsFile: null) → the modal can't save; stay quiet.
+          const show = !set && !keyDismissed && !!devVarsFile;
+          return res.end(JSON.stringify({ set, show, envName: apiKeyEnv, file: devVarsFile }));
+        }
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        await new Promise((r) => req.on("end", r));
+        let key = "";
+        let dismissed = false;
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          key = String(body.key ?? "").trim();
+          dismissed = body.dismissed === true;
+        } catch {
+          /* bad json */
+        }
+        if (dismissed) {
+          keyDismissed = true;
+          return res.end(JSON.stringify({ ok: true }));
+        }
+        const fail = (message: string) => {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: message }));
+        };
+        if (!key || /\s/.test(key) || key.length > 1024) return fail("That doesn't look like an API key.");
+        if (!devVarsFile) return fail(`Key saving is disabled (devVarsFile: null) — set ${apiKeyEnv} in your environment instead.`);
+        try {
+          writeEnvVar(root, devVarsFile, apiKeyEnv, key);
+          const gitignoreUpdated = ensureGitignored(root, devVarsFile);
+          res.end(JSON.stringify({ ok: true, file: devVarsFile, gitignoreUpdated }));
+        } catch (e) {
+          fail(`Couldn't write ${devVarsFile}: ${String((e as Error)?.message ?? e)}`);
+        }
+      });
+
       server.middlewares.use("/__agent", async (req, res, next) => {
         if (req.method !== "POST") return next();
         if (rejectNonLoopback(req, res, allowRemote)) return;
