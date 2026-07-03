@@ -14,4 +14,5 @@ Every agent, every session. Linear workspace: **team "Off-brand"**, **project "v
 - **Wire real dependencies** (`blockedBy`/`blocks`) for genuine sequencing — e.g. the launch tweet is blocked by npm publish + website + assets. Don't leave sequencing as tribal knowledge.
 - **Close the loop before ending a session.** If tracked work happened, update the issue (state and/or a short comment) before finishing. Shipping something but leaving Linear stale is not done.
 - **Status updates at real milestones only.** Post a project status update when a milestone completes or health materially changes — not for routine incremental work.
+- **Write tersely.** Titles ≤8 words; descriptions ≤3 sentences or ≤5 bullets; comments ≤3 lines; attach screenshots instead of describing visuals.
 - **Use Linear's generated branch names** (`ty/off-N-slug`) so commits/PRs auto-link — never hand-roll a parallel scheme.
