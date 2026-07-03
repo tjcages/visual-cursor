@@ -66,7 +66,7 @@ export function App() {
 }
 ```
 
-**3. Set your Cursor API key** as `CURSOR_API_KEY` (env var, or in a `.dev.vars` file at the repo root — either works out of the box).
+**3. Set your Cursor API key** as `CURSOR_API_KEY` (env var, or in a `.dev.vars` file at the repo root — either works out of the box). Or skip this step: if no key is found, the overlay shows a one-time prompt in the browser where you can paste it — the key is written to `.dev.vars` (and that file is gitignored for you), locally only, never sent anywhere. Dismiss it freely; it won't reappear until the dev server restarts.
 
 Run your dev server, hold ⌘, hover a component, and ⌘-click it.
 

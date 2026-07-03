@@ -27,9 +27,9 @@ vi.mock("@cursor/sdk", () => ({
   },
 }));
 
-function fakeReq(body: unknown): IncomingMessage {
+function fakeReq(body: unknown, method = "POST"): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage;
-  req.method = "POST";
+  req.method = method;
   // @ts-expect-error - test double
   req.socket = { remoteAddress: "127.0.0.1" };
   queueMicrotask(() => {
@@ -176,5 +176,64 @@ describe("cursorAgent middleware", () => {
     req.socket = { remoteAddress: "203.0.113.5" };
     await middlewares["/__agent"](req, res, () => {});
     expect(res.statusCode).toBe(403);
+  });
+
+  describe("/__key first-run setup", () => {
+    const getStatus = async () => {
+      const res = fakeRes();
+      await middlewares["/__key"](fakeReq(null, "GET"), res, () => {});
+      return JSON.parse(res.chunks.join(""));
+    };
+
+    it("keeps offering the modal across reloads until dismissed, then stops", async () => {
+      delete process.env.CURSOR_API_KEY;
+      expect(await getStatus()).toMatchObject({ set: false, show: true, envName: "CURSOR_API_KEY", file: ".dev.vars" });
+      expect(await getStatus()).toMatchObject({ set: false, show: true }); // a reload doesn't eat the prompt
+      const res = fakeRes();
+      await middlewares["/__key"](fakeReq({ dismissed: true }), res, () => {});
+      expect(JSON.parse(res.chunks.join(""))).toEqual({ ok: true });
+      expect(await getStatus()).toMatchObject({ set: false, show: false }); // dismissal sticks for this server
+    });
+
+    it("never offers the modal when the key is already set", async () => {
+      expect(await getStatus()).toMatchObject({ set: true, show: false });
+    });
+
+    it("writes the key to .dev.vars, gitignores it, and the agent then sees it", async () => {
+      delete process.env.CURSOR_API_KEY;
+      const res = fakeRes();
+      await middlewares["/__key"](fakeReq({ key: "sk-test-123" }), res, () => {});
+      expect(JSON.parse(res.chunks.join(""))).toEqual({ ok: true, file: ".dev.vars", gitignoreUpdated: true });
+      expect(fs.readFileSync(path.join(root, ".dev.vars"), "utf8")).toBe("CURSOR_API_KEY=sk-test-123\n");
+      expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toContain(".dev.vars");
+      expect(await getStatus()).toMatchObject({ set: true });
+    });
+
+    it("replaces an existing entry and preserves the rest of the file", async () => {
+      delete process.env.CURSOR_API_KEY;
+      fs.writeFileSync(path.join(root, ".dev.vars"), "OTHER=1\nCURSOR_API_KEY=old\n");
+      fs.writeFileSync(path.join(root, ".gitignore"), ".dev.vars\n");
+      const res = fakeRes();
+      await middlewares["/__key"](fakeReq({ key: "sk-new" }), res, () => {});
+      expect(JSON.parse(res.chunks.join(""))).toEqual({ ok: true, file: ".dev.vars", gitignoreUpdated: false });
+      expect(fs.readFileSync(path.join(root, ".dev.vars"), "utf8")).toBe("OTHER=1\nCURSOR_API_KEY=sk-new\n");
+    });
+
+    it("rejects a key with whitespace", async () => {
+      const res = fakeRes();
+      await middlewares["/__key"](fakeReq({ key: "not a key" }), res, () => {});
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.chunks.join("")).ok).toBe(false);
+    });
+
+    it("rejects a non-loopback request with 403", async () => {
+      const res = fakeRes();
+      const req = fakeReq({ key: "sk-remote" });
+      // @ts-expect-error - test double
+      req.socket = { remoteAddress: "203.0.113.5" };
+      await middlewares["/__key"](req, res, () => {});
+      expect(res.statusCode).toBe(403);
+      expect(fs.existsSync(path.join(root, ".dev.vars"))).toBe(false);
+    });
   });
 });
