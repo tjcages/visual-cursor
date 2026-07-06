@@ -109,7 +109,7 @@ export function clickToSourceStamp(options: StampOptions = {}): Plugin {
     transform(code, id) {
       if (envFlag && !process.env[envFlag]) return null;
       const file = id.split("?")[0];
-      if (!file.endsWith(".tsx") || !file.startsWith(srcDirAbs)) return null;
+      if (!/\.[tj]sx$/.test(file) || !file.startsWith(srcDirAbs)) return null;
       const rel = path.relative(root, file);
       try {
         const result = babel.transformSync(code, {

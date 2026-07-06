@@ -7,11 +7,15 @@ Hold **⌘** and hover any React component in your running app to highlight it. 
 
 This is a dev-only tool — it does nothing in a production build.
 
-> **⚠️ Security: localhost only.** The `/__agent`, `/__undo`, `/__redo` endpoints are
-> **unauthenticated** — a POST to `/__agent` turns into an arbitrary edit to a file on disk.
+> **⚠️ Security: localhost only.** The `/__agent`, `/__undo`, `/__redo`, `/__key` endpoints are
+> **unauthenticated** — a POST to `/__agent` turns into an arbitrary edit to a file on disk
+> (and `/__key` writes your API key file).
 > That's the point (it's how the browser talks to the agent), but it means anyone who can
 > reach your dev server can edit your repo. By default `cursorAgent()` refuses any request
-> that didn't arrive over loopback (`127.0.0.1`/`::1`), so this is safe with plain `vite dev`.
+> that didn't arrive over loopback (`127.0.0.1`/`::1`), and it always refuses cross-site
+> browser requests (so a random website open in your browser can't drive the agent via
+> CSRF — only same-origin traffic from the app itself is accepted). This makes plain
+> `vite dev` safe.
 > **It stops being safe** the moment your dev server is reachable from anywhere else —
 > `vite --host`, a container with a published port, an ngrok/Cloudflare tunnel, a shared
 > devcontainer. Don't do that with this plugin enabled unless the network path is itself
@@ -22,7 +26,7 @@ This is a dev-only tool — it does nothing in a production build.
 
 - A Vite plugin (`clickToSourceStamp`) stamps every element you author with a `data-loc="file:line:col"` attribute at dev-transform time, plus `Component.__loc` on every top-level component so clicks resolve even through portals (Radix `asChild`, dropdowns rendered to `<body>`, etc).
 - A `<VisualCursor />` React component (mounted once, dev-only) reads those stamps off the React fiber tree under the cursor, and renders the ⌘-hover ring + the composer panel.
-- A second Vite plugin (`cursorAgent`) adds `/__agent`, `/__undo`, `/__redo` middleware to the dev server. Submitting a composer POSTs the file/line/instruction to `/__agent`, which runs a [`@cursor/sdk`](https://www.npmjs.com/package/@cursor/sdk) `Agent` scoped to that one file and streams progress back as NDJSON. Every turn is snapshotted (`git stash create`) so ⌘Z can restore the exact pre-edit file contents, and every changed file is syntax-checked before being accepted — a broken edit is auto-reverted instead of white-screening your app.
+- A second Vite plugin (`cursorAgent`) adds `/__agent`, `/__undo`, `/__redo`, `/__key` middleware to the dev server. Submitting a composer POSTs the file/line/instruction to `/__agent`, which runs a [`@cursor/sdk`](https://www.npmjs.com/package/@cursor/sdk) `Agent` scoped to that one file and streams progress back as NDJSON. Every turn is snapshotted (`git stash create`) so ⌘Z can restore the exact pre-edit file contents, and every changed file is syntax-checked before being accepted — a broken edit is auto-reverted instead of white-screening your app. (The syntax check needs `typescript` to be resolvable in your app — true for any TS project; JS-only apps skip it, with ⌘Z as the fallback.)
 
 ## Install
 
@@ -30,7 +34,7 @@ This is a dev-only tool — it does nothing in a production build.
 npm install visual-cursor @cursor/sdk
 ```
 
-`@cursor/sdk` is an optional peer dependency — only required if you use the agent-editing feature (`cursorAgent`); the stamping + inspector overlay works without it. Note: `@cursor/sdk` itself requires **Node ≥22.13** — on an older Node, npm silently skips installing it (so `cursorAgent()` will report a missing package at runtime, and any code that type-imports it will fail to resolve types). Everything else in this package works on Node ≥18.
+`@cursor/sdk` is an optional peer dependency — only required if you use the agent-editing feature (`cursorAgent`); the stamping + inspector overlay works without it (`npm install visual-cursor` alone). Note: `@cursor/sdk` itself requires **Node ≥22.13**; everything else in this package works on Node ≥18.
 
 ## Setup
 
@@ -113,7 +117,7 @@ clone the repo, `npm run build`, then `cd examples/vite-react && npm install && 
 | | |
 | --- | --- |
 | Node | ≥18 (the optional agent feature needs ≥22.13 — see [Install](#install)) |
-| React | ≥18 |
+| React | ≥18, components in `.tsx` / `.jsx` files (that's what gets stamped) |
 | Vite | ≥5 |
 | `@cursor/sdk` | optional — only for `cursorAgent()`; the stamping + inspector overlay work without it |
 
@@ -121,7 +125,7 @@ clone the repo, `npm run build`, then `cd examples/vite-react && npm install && 
 
 - **Never committed / logged**: the API key is only read server-side, in the dev-server process.
 - Undo/redo is per dev-server session (in-memory), not persisted across restarts.
-- The agent is constrained to edit only the one file it was scoped to.
+- The agent is instructed to edit only the one file it was scoped to (a prompt-level constraint — the syntax check and ⌘Z cover anything else a turn touches).
 
 ## Releasing
 

@@ -27,9 +27,10 @@ vi.mock("@cursor/sdk", () => ({
   },
 }));
 
-function fakeReq(body: unknown, method = "POST"): IncomingMessage {
+function fakeReq(body: unknown, method = "POST", headers: Record<string, string> = {}): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage;
   req.method = method;
+  req.headers = headers;
   // @ts-expect-error - test double
   req.socket = { remoteAddress: "127.0.0.1" };
   queueMicrotask(() => {
@@ -178,6 +179,31 @@ describe("cursorAgent middleware", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  // CSRF: a malicious page in the developer's browser reaches the endpoint
+  // FROM loopback, so it must be caught by the same-origin check instead.
+  it("rejects a cross-site browser request (Origin mismatch) despite loopback", async () => {
+    const res = fakeRes();
+    const req = fakeReq({ file: "Widget.tsx", instruction: "x" }, "POST", { origin: "https://evil.example", host: "localhost:5173" });
+    await middlewares["/__agent"](req, res, () => {});
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.chunks.join("")).error).toMatch(/cross-site/);
+  });
+
+  it("rejects a cross-site request flagged by Sec-Fetch-Site", async () => {
+    const res = fakeRes();
+    const req = fakeReq({ key: "sk-x" }, "POST", { "sec-fetch-site": "cross-site" });
+    await middlewares["/__key"](req, res, () => {});
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("accepts a same-origin browser request (Origin matches Host)", async () => {
+    const res = fakeRes();
+    const req = fakeReq(null, "GET", { origin: "http://localhost:5173", host: "localhost:5173", "sec-fetch-site": "same-origin" });
+    await middlewares["/__key"](req, res, () => {});
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.chunks.join(""))).toHaveProperty("set");
+  });
+
   describe("/__key first-run setup", () => {
     const getStatus = async () => {
       const res = fakeRes();
@@ -222,6 +248,13 @@ describe("cursorAgent middleware", () => {
     it("rejects a key with whitespace", async () => {
       const res = fakeRes();
       await middlewares["/__key"](fakeReq({ key: "not a key" }), res, () => {});
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.chunks.join("")).ok).toBe(false);
+    });
+
+    it("400s (not crashes) on a literal-null JSON body", async () => {
+      const res = fakeRes();
+      await middlewares["/__key"](fakeReq(null), res, () => {});
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.chunks.join("")).ok).toBe(false);
     });

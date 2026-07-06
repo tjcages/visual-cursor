@@ -14,8 +14,8 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 
-// The /__agent, /__undo, /__redo endpoints take unauthenticated instructions
-// and turn them into arbitrary edits to files on disk — that's fine for a
+// The /__agent, /__undo, /__redo, /__key endpoints take unauthenticated
+// instructions and turn them into arbitrary edits to files on disk — that's fine for a
 // dev server bound to localhost, but remote code execution if the dev server
 // is ever reachable from the network (e.g. `vite --host`, a container with a
 // published port, a tunnel). Refuse anything that didn't arrive over the
@@ -25,19 +25,61 @@ function isLoopback(req: IncomingMessage): boolean {
   const addr = req.socket.remoteAddress;
   return !!addr && LOOPBACK.has(addr);
 }
-function rejectNonLoopback(req: IncomingMessage, res: ServerResponse, allowRemote: boolean): boolean {
+
+// Cross-site browser requests (CSRF): a malicious page in the developer's own
+// browser can fire a no-preflight POST at http://localhost:<port>/__agent —
+// it arrives FROM 127.0.0.1, so the loopback check alone can't see it. The
+// overlay is always served by this same dev server, so every legitimate
+// browser request is same-origin; refuse browser-originated requests that
+// aren't. Non-browser clients (curl, scripts) send neither header and pass —
+// the loopback check still applies to them. Never bypassed by allowRemote:
+// a cross-SITE request is never legitimate regardless of network trust.
+function isCrossSite(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  if (site && site !== "same-origin" && site !== "none") return true;
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== req.headers.host;
+  } catch {
+    return true; // unparseable Origin — refuse
+  }
+}
+
+function rejectUntrusted(req: IncomingMessage, res: ServerResponse, allowRemote: boolean): boolean {
+  const refuse = (error: string) => {
+    res.statusCode = 403;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error }));
+    return true;
+  };
+  if (isCrossSite(req))
+    return refuse(
+      "visual-cursor: refused a cross-site request. These endpoints only accept same-origin browser traffic."
+    );
   if (allowRemote || isLoopback(req)) return false;
-  res.statusCode = 403;
-  res.setHeader("Content-Type", "application/json");
-  res.end(
-    JSON.stringify({
-      error:
-        "visual-cursor: refused a non-loopback request. This endpoint runs arbitrary file edits — " +
-        "only localhost is trusted by default. Pass { allowRemote: true } to cursorAgent() if you " +
-        "understand the risk (e.g. a trusted LAN/tunnel).",
-    })
+  return refuse(
+    "visual-cursor: refused a non-loopback request. This endpoint runs arbitrary file edits — " +
+      "only localhost is trusted by default. Pass { allowRemote: true } to cursorAgent() if you " +
+      "understand the risk (e.g. a trusted LAN/tunnel)."
   );
-  return true;
+}
+
+// Read + JSON-parse a request body; {} on malformed OR non-object input
+// (JSON.parse("null") succeeds, and callers dot into the result).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readJsonBody(req: IncomingMessage): Promise<any> {
+  const chunks: Buffer[] = [];
+  req.on("data", (c: Buffer) => chunks.push(c));
+  await new Promise((r) => {
+    req.on("end", r);
+    req.on("error", r); // settle on aborted requests too — never leak a pending handler
+  });
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) ?? {};
+  } catch {
+    return {};
+  }
 }
 
 function readEnvFile(root: string, file: string, name: string): string | undefined {
@@ -148,7 +190,7 @@ export type AgentOptions = {
   /** Max concurrently held agent threads before the oldest is disposed. @default 24 */
   maxThreads?: number;
   /**
-   * Allow /__agent, /__undo, /__redo to accept requests from outside
+   * Allow /__agent, /__undo, /__redo, /__key to accept requests from outside
    * localhost. These endpoints turn a POST body into arbitrary file edits —
    * only enable this if the dev server is behind a trust boundary you
    * control (e.g. an authenticated tunnel). @default false
@@ -275,6 +317,10 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
   const redoStack: Snap[] = [];
   let keyDismissed = false; // first-run key modal: a dismissal sticks for this server's lifetime
 
+  // THE definition of where the API key comes from — /__agent (to run) and
+  // /__key (to report status) must always agree on it.
+  const readKey = () => process.env[apiKeyEnv] ?? (devVarsFile ? readEnvFile(root, devVarsFile, apiKeyEnv) : undefined);
+
   return {
     name: "visual-cursor:agent",
     apply: "serve",
@@ -288,27 +334,17 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
       // on this machine — the key is never echoed back or logged.
       server.middlewares.use("/__key", async (req, res, next) => {
         if (req.method !== "GET" && req.method !== "POST") return next();
-        if (rejectNonLoopback(req, res, allowRemote)) return;
+        if (rejectUntrusted(req, res, allowRemote)) return;
         res.setHeader("Content-Type", "application/json");
         if (req.method === "GET") {
-          const set = !!(process.env[apiKeyEnv] ?? (devVarsFile ? readEnvFile(root, devVarsFile, apiKeyEnv) : undefined));
+          const set = !!readKey();
           // No writable file (devVarsFile: null) → the modal can't save; stay quiet.
           const show = !set && !keyDismissed && !!devVarsFile;
           return res.end(JSON.stringify({ set, show, envName: apiKeyEnv, file: devVarsFile }));
         }
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        await new Promise((r) => req.on("end", r));
-        let key = "";
-        let dismissed = false;
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          key = String(body.key ?? "").trim();
-          dismissed = body.dismissed === true;
-        } catch {
-          /* bad json */
-        }
-        if (dismissed) {
+        const body = await readJsonBody(req);
+        const key = String(body.key ?? "").trim();
+        if (body.dismissed === true) {
           keyDismissed = true;
           return res.end(JSON.stringify({ ok: true }));
         }
@@ -329,23 +365,15 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
 
       server.middlewares.use("/__agent", async (req, res, next) => {
         if (req.method !== "POST") return next();
-        if (rejectNonLoopback(req, res, allowRemote)) return;
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        await new Promise((r) => req.on("end", r));
-        let body: Body = {};
-        try {
-          body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        } catch {
-          /* bad json */
-        }
+        if (rejectUntrusted(req, res, allowRemote)) return;
+        const body: Body = await readJsonBody(req);
 
         res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const write = (o: any) => res.write(JSON.stringify(o) + "\n");
 
-        const apiKey = process.env[apiKeyEnv] ?? (devVarsFile ? readEnvFile(root, devVarsFile, apiKeyEnv) : undefined);
+        const apiKey = readKey();
         if (!apiKey) {
           write({ type: "error", message: `No ${apiKeyEnv} set (checked process.env${devVarsFile ? ` and ${devVarsFile}` : ""})` });
           return res.end();
@@ -440,7 +468,7 @@ export function cursorAgent(options: AgentOptions = {}): Plugin {
       // ⌘Z / ⌘⇧Z — restore the working tree to before/after the last agent turn.
       const history = (from: Snap[], to: Snap[], key: "pre" | "post") =>
         (req: IncomingMessage, res: ServerResponse) => {
-          if (rejectNonLoopback(req, res, allowRemote)) return;
+          if (rejectUntrusted(req, res, allowRemote)) return;
           res.setHeader("Content-Type", "application/json");
           const snap = from.pop();
           if (!snap) return res.end(JSON.stringify({ ok: false, empty: true }));

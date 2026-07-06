@@ -65,13 +65,25 @@ describe("clickToSourceStamp", () => {
     expect(result).toBeNull();
   });
 
-  it("only transforms .tsx files", () => {
+  it("does not transform non-JSX (.ts / .js) files", () => {
     const plugin = clickToSourceStamp();
     const root = process.cwd();
-    const id = path.join(root, "src", "widget.ts");
+    for (const name of ["widget.ts", "widget.js"]) {
+      const id = path.join(root, "src", name);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = (plugin.transform as any).call({}, `export const x = 1;`, id);
+      expect(result).toBeNull();
+    }
+  });
+
+  it("stamps .jsx files too (plain-JavaScript React apps)", () => {
+    const plugin = clickToSourceStamp();
+    const root = process.cwd();
+    const id = path.join(root, "src", "Widget.jsx");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = (plugin.transform as any).call({}, `export const x = 1;`, id);
-    expect(result).toBeNull();
+    const result = (plugin.transform as any).call({}, `export function Widget() {\n  return <div>hi</div>;\n}\n`, id);
+    expect(result?.code).toMatch(/data-loc="src\/Widget\.jsx:2:10"/);
+    expect(result?.code).toContain('Widget.__loc = "src/Widget.jsx:1"');
   });
 
   it("respects envFlag gating — no-op when the flag is unset", () => {
