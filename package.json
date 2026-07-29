@@ -42,7 +42,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "prepare": "npm run build",
+    "prepare": "npx --yes tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
