@@ -1,6 +1,4 @@
-import { defineConfig } from "tsup";
-
-export default defineConfig({
+export default {
   entry: {
     index: "src/index.ts",
     client: "src/client.tsx",
@@ -13,4 +11,4 @@ export default defineConfig({
   clean: true,
   target: "es2022",
   external: ["react", "react-dom", "vite", "@cursor/sdk", "typescript"],
-});
+};

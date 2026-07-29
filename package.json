@@ -42,6 +42,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "prepare": "npm exec --yes --package=tsup@8.5.1 --package=typescript@5.9.3 -- tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
